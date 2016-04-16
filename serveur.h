@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <pthread.h>
 
 #define MSS 1015 //max segment size
 #define MDS 1000 // max data size
@@ -23,8 +24,16 @@ char recep[MSS], sndBuf[MSS];
 socklen_t alen;
 FILE* fin;
 
+int cwnd;
+int flight_size;
+
+pthread_mutex_t mutex;
+pthread_cond_t ACK_received;
+
 void connexion();
 void init();
 void conversation();
 void send_file();
+void *receive_ACK(void *);
+void *send_thread(void *);
 int catch_file_size();

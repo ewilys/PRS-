@@ -4,12 +4,12 @@
 #########################################################
 
 CC = gcc
-LD = gcc
+FLAGS = -pthread
 
 all : clean serveur client
 
 serveur : serveur.c serveur.h
-	${CC} serveur.c -o serveur
+	${CC} ${FLAGS} serveur.c -o serveur
 	
 client : client.c client.h
 	${CC} client.c  -o client

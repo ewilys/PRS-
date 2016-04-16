@@ -78,9 +78,9 @@ void desencapsulation(){
 
 	//catch the sequence numero
 		memcpy(num_seq, msgRcv, NUMSEQ_SIZE);
-		printf("Segment num : %s received \n", num_seq);
+		//printf("Segment num : %s received \n", num_seq);
 	//catch the flag fragm
-		printf("flag fragm :%c\n",msgRcv[NUMSEQ_SIZE]);
+		//printf("flag fragm :%c\n",msgRcv[NUMSEQ_SIZE]);
 		if(msgRcv[NUMSEQ_SIZE]=='0'){
 			okay_file=0; //end of file
 			printf("\t last seq num \n");
@@ -114,11 +114,11 @@ void file_reception(){
 
 			position_in_file=(count-1)*MDS;
 			memcpy(all_file_received+position_in_file,msgRcv+H_SIZE,size_data_recv-H_SIZE);
-			printf("size payload received : %s \n",nb_data_rcv);
+			//printf("size payload received : %s \n",nb_data_rcv);
 			
 			sprintf(msgSnd,"ACK_%d", count);
 			count++;
-			drop_count++;
+			//drop_count++;
 			
 		}
 		else{
