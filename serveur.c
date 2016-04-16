@@ -140,7 +140,7 @@ void send_file(){
 	pthread_mutex_lock(&mutex);
 	count=0;
 	fragm=1;
-	cwnd=3;
+	cwnd=8;
 	flight_size=0;
 	pthread_mutex_unlock(&mutex);
 	
