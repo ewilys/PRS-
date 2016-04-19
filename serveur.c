@@ -1,5 +1,9 @@
 #include "serveur.h"
 
+void new_connexion(){
+	nbClient++;
+}
+
 void connexion(){ //mise en place connexion simulation demande de connexion tcp
 
 	printf("Connexion process \n");
@@ -51,12 +55,20 @@ void init( ){ //initialisation des variables et création/lien socket
 
 		memset((char*)&serveur,0,sizeof(serveur));
 		memset((char*)&client,0,sizeof(client));
-		
-		
-		valid= 1;
-		connected=0;
 		memset(sndBuf,0,MSS);
 		memset(recep,0,MSS);
+		
+		
+	//init global variables
+
+		count=0;
+		fragm=1;
+		cwnd=8;
+		flight_size=0;
+
+		valid= 1;
+		connected=0;
+		
 		alen= sizeof(client);
 
 	//create socket
@@ -73,14 +85,17 @@ void init( ){ //initialisation des variables et création/lien socket
 		setsockopt(desc, SOL_SOCKET, SO_REUSEADDR, &valid, sizeof(int));
 		setsockopt(desc_data_sock, SOL_SOCKET, SO_REUSEADDR, &valid, sizeof(int));
 		
-		
+	//initialisation of serveur and data addr	
 		serveur.sin_family= AF_INET;
 		data.sin_family= AF_INET;
+		
 		serveur.sin_port= htons(port);
 		data.sin_port= htons(port_data);
+		
 		serveur.sin_addr.s_addr= htonl(INADDR_ANY);
 		data.sin_addr.s_addr= htonl(INADDR_ANY);		
 
+	//bind sockets and their addr
 		if (bind(desc, (struct sockaddr*) &serveur, sizeof(serveur)) == -1) {
 			perror("Bind fail\n");
 			close(desc);
@@ -92,14 +107,25 @@ void init( ){ //initialisation des variables et création/lien socket
 			close(desc_data_sock);
 			exit(-1);
 		}
-
+		
+	
+	 /* For portability, explicitly create threads in a joinable state */
+	pthread_attr_init(&attr_listener);
+	pthread_attr_setdetachstate(&attr_listener, PTHREAD_CREATE_JOINABLE);
+	pthread_attr_init(&attr_sender);
+	pthread_attr_setdetachstate(&attr_sender, PTHREAD_CREATE_JOINABLE);
+	
+	/* Initialize mutex */
+	pthread_mutex_init(&mutex, NULL);
+	
+	
 }	
 
 
 void conversation(){
 
 	connected=1;
-	count=1;
+	int nbMsg=1;
 	printf("\t conversation begins\n");
 		while (connected==1) {
 				
@@ -110,17 +136,40 @@ void conversation(){
 				
 				printf("received : %s\n", recep);
 				if(strcmp(recep, "stop\n")==0){
-					printf("Connexion ended by client\n");
+					printf("Connexion ended by client %d\n",nbClient);
 					memset(recep,0,MSS);
 					connected=0;
 				}
 				else{
-					sprintf(sndBuf,"ACK_%d",count);
-					sendto(desc_data_sock,sndBuf,strlen(sndBuf),0, (struct sockaddr*)&client, alen);
-					printf("%s sent \n",sndBuf);
+					fin=fopen(recep, "r");
+					if(fin==NULL){
+						printf("Error : file not found \n");
+						sprintf(sndBuf,"ACK_%d",nbMsg);
+						sendto(desc_data_sock,sndBuf,strlen(sndBuf),0, (struct sockaddr*)&client, alen);
+						printf("%s sent \n",sndBuf);
+					}	
+					else{
+						file_size=catch_file_size();
+						printf("size of file : %d\n",file_size); 
+						sprintf(sndBuf,"ACK_0");
+						sendto(desc_data_sock,sndBuf,strlen(sndBuf),0, (struct sockaddr*)&client, alen);
+						printf("%s sent \n",sndBuf);
+					
+						// create 2 thread one to send the file the other to receive ACKs
+						pthread_create(&sender, &attr_sender, send_file, (void *)1);
+						pthread_create(&listener, &attr_listener, receive_ACK, (void *)2);
+
+		 				 /* Wait for all threads to complete */
+		  
+		    				pthread_join(sender, NULL);
+		    				pthread_join(listener, NULL);
+		  				printf ("conversation(): Waited on 2 thread. Done.\n");
+					}
+					
+					
 					memset(sndBuf,0,MSS);
 					memset(recep,0,MSS);
-					count++;
+					nbMsg++;
 				}
 				
 			}
@@ -134,21 +183,13 @@ void conversation(){
 }
 
 
-void send_file(){
+void *send_file(void *arg ){
 
-	//init global variables
-	pthread_mutex_lock(&mutex);
-	count=0;
-	fragm=1;
-	cwnd=8;
-	flight_size=0;
-	pthread_mutex_unlock(&mutex);
-	
+		
 	//init local variables
 	int size_data_to_send=1;
 	char all_file[file_size];
 	int curseur=0;
-	long nb_segment;
 	int total_size;
 	int i=0;
 	
@@ -162,29 +203,18 @@ void send_file(){
 	}
 	printf("%d bytes written in all_file buffer\n",curseur);
 	
-	//create a thread to receive ACKs
-	pthread_t listener;
-	pthread_attr_t attr_listener;
+			
 
-	 /* For portability, explicitly create threads in a joinable state */
-	pthread_attr_init(&attr_listener);
-	pthread_attr_setdetachstate(&attr_listener, PTHREAD_CREATE_JOINABLE);
-	
+	//sequencing the file
+	nb_segment_total=(int)(file_size/MDS)+1;// need to add 1 to count the last segment with a fewer size
+	printf("nb segment =%d\n", nb_segment_total);
+
 		
-
-	//start sequencing the file
-	nb_segment=(int)(file_size/MDS)+1;// need to add 1 to count the last segment with a fewer size
-	printf("nb segment =%ld\n", nb_segment);
-
-	
-	//listener thread launched
-	pthread_create(&listener, &attr_listener, receive_ACK, (void *)nb_segment);
-	
 	
 	//beginning of the file sending
 	printf("\t send_file begins\n");
 	
-	while(count<=nb_segment){
+	while(count<=nb_segment_total){
 	
 	pthread_mutex_lock(&mutex);
 		
@@ -195,7 +225,7 @@ void send_file(){
 			/*update the payload */
 			
 				//if it's the last sequence
-				if(count==nb_segment){
+				if(count==nb_segment_total){
 					fragm=0;
 					printf("\tlast seq to send, reach end of file\n");
 
@@ -243,24 +273,13 @@ void send_file(){
 	}//end of file
 
 	
-	  /* Wait for all threads to complete */
-		  
-	pthread_join(listener, NULL);
-		  
-	printf ("Main(): Waited on listener thread. Done.\n");
-
-		  /* Clean up and exit */
-	pthread_attr_destroy(&attr_listener);
-	
+	pthread_exit(NULL);	
 	
 }
 
 void *receive_ACK(void *arg ){
 
-	int rcvMsg_Size;
-	long nb_total_segment=(long)arg;
-	
-	
+	int rcvMsg_Size;	
 	char* str;
 	
 	do{
@@ -270,15 +289,18 @@ void *receive_ACK(void *arg ){
 		//wait for ack
 			rcvMsg_Size= recvfrom(desc_data_sock,recep,MSS,0,(struct sockaddr*)&client, &alen);
 			while(rcvMsg_Size > 0) {
+			
+			
 				
-					pthread_mutex_lock(&mutex);
-					
-					printf("received : %s\n", recep);
 				// check if it's the good ack
 					str=strtok(recep, "_");
 					if(strcmp(str,"ACK")==0){
 						str=strtok(NULL, " ");
 						
+						/* critical section access to variable used by the other send, need mutex protection*/
+						pthread_mutex_lock(&mutex);
+						
+						printf("received : %s_%s\n", recep,str);
 						if (atoi(str)<=count){
 							flight_size--;
 						}
@@ -288,12 +310,15 @@ void *receive_ACK(void *arg ){
 							printf("count=%d\n",count);
 						}
 						
+						pthread_mutex_unlock(&mutex);
+						/*end of critical section */
+						
 						rcvMsg_Size=0; 
-						pthread_mutex_unlock(&mutex);	
 					}
+						
 					
 			}
-	}while(atoi(str) !=  nb_total_segment);
+	}while(atoi(str) != nb_segment_total);
 	
 	
 	pthread_exit(NULL);
@@ -305,61 +330,11 @@ int catch_file_size(){
 
 	int size;
 	fseek (fin, 0, SEEK_END);   // non-portable
-	size=ftell (fin);
-	printf("size of file : %d\n",size);         
+	size=ftell (fin);      
 	rewind(fin);
 	return size;
 	
 }
-
-void *send_thread(void *num_port){
-
-		
-		port=atoi((char* )num_port);
-		port_data=port+1;
-
-  		
-  		init();
-		connexion(); 
-		
-	
-		//échange d'informations possibles sur 2eme port 
-
-		printf("information exchange on port : %d \n",port_data); 
-		
-		do {
-			msgSize= recvfrom(desc_data_sock,recep,MSS,0,(struct sockaddr*)&client, &alen);
-
-			if(msgSize > 0) {
-				
-				printf("received : %s\n", recep);
-				fin=fopen(recep, "r");
-				if(fin==NULL)
-					printf("Error : file not found \n");
-				else{
-					sprintf(sndBuf,"ACK_0");
-					sendto(desc_data_sock,sndBuf,strlen(sndBuf),0, (struct sockaddr*)&client, alen);
-					printf("%s sent \n",sndBuf);
-					memset(sndBuf,0,MSS);
-					memset(recep,0,MSS);
-				}
-			}
-		}while(fin==NULL);
-		
-		close(desc);
-		
-		file_size=catch_file_size();
-		printf("size of file : %d\n",file_size); 
-		
-		send_file();
-		conversation();
-		fclose(fin);
-		
-		close(desc_data_sock);
-		pthread_exit(NULL);
-
-}
-
 
 
 int main (int argc, char *argv[]) {
@@ -370,33 +345,44 @@ int main (int argc, char *argv[]) {
 	}
 	else{
 	
-		int num_thread=1;
-		pthread_t sender;
-		pthread_attr_t attr;
+		int pid;
+		port=atoi(argv[1]);
+		nbClient=1;
+		while(1){
+			
+			signal(SIGUSR1, new_connexion);
+			port_data=port+nbClient; //allow to communicate with severals clients
 
-		  /* Initialize mutex */
-		  pthread_mutex_init(&mutex, NULL);
-		 
-
-		  /* For portability, explicitly create threads in a joinable state */
-		  pthread_attr_init(&attr);
-		  pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
-		  pthread_create(&sender, &attr, send_thread, (void *)argv[1]);
-		
-
-		  /* Wait for all threads to complete */
-		  
-		    pthread_join(sender, NULL);
-		  
-		  printf ("Main(): Waited on 1 thread. Done.\n");
-
-		  /* Clean up and exit */
-		pthread_attr_destroy(&attr);
-		pthread_mutex_destroy(&mutex);
-		pthread_cond_destroy(&ACK_received);
-		pthread_exit(NULL);
-		
-		
+			pid=fork();//create new process for each client	
+			if(pid==0){//son process
+				printf("process communicating with client %d\n",nbClient);
+				
+  				init();
+				connexion();
+				
+				kill(getppid(), SIGUSR1); //allow father to get a new connexion
+				
+				
+				close(desc); //closing control socket
+				
+				printf("information exchange on port : %d \n",port_data); 
+	
+				conversation();
+				
+				/* Clean up and exit */
+				pthread_attr_destroy(&attr_listener);
+				pthread_attr_destroy(&attr_sender);
+				pthread_mutex_destroy(&mutex);
+				close(desc_data_sock);//closing communication socket
+				exit(nbClient);
+				
+			}
+			else{//father process
+				pause();
+			}
+		}
 	}
+	
+			
 	return 0;
 }
