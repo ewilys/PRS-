@@ -28,7 +28,7 @@ int cwnd;
 int flight_size;
 
 pthread_mutex_t mutex;
-
+pthread_cond_t ACK_received;
 
 void connexion();
 void init();

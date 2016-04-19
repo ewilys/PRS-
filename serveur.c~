@@ -374,9 +374,9 @@ int main (int argc, char *argv[]) {
 		pthread_t sender;
 		pthread_attr_t attr;
 
-		  /* Initialize mutex */
+		  /* Initialize mutex and condition variable objects */
 		  pthread_mutex_init(&mutex, NULL);
-		 
+		  pthread_cond_init (&ACK_received, NULL);
 
 		  /* For portability, explicitly create threads in a joinable state */
 		  pthread_attr_init(&attr);
