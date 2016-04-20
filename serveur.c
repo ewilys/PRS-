@@ -1,5 +1,25 @@
 #include "serveur.h"
 
+/*Le mieux serait de faire une fonction encapsulation, appelée AVANT l'envoi du fichier et qui remplirait un tableau de chaînes de caractères (header+data). 
+On n'aura plus qu'à envoyer chaque case... 
+PB : On est obligé de connaître la longueur à l'avance et ça pose soucis pour la dernière séquence (qui est plus courte que les autres) 
+==> La mettre dans une variable à part et mettre toutes les autres séquences encapsulées dans le tableau ?*/
+/*PB du count et du fragm, est-ce que cela ne pose pas problème de les déclarer dans le .h ? 
+Ou est-ce que le fait qu'on les initialise via différents processus évite le problème ?*/
+
+/*PB de connexion de plusieurs clients :
+	- Bug d'affichage (j'ai connecté 2 clients, c'est le client 5 qui résilie la connexion...)
+	- Affichage de seulement une seule conversation(), donc pas de réception de "stop" de la part des clients>2.
+	- Une seule sortie pour plusieurs clients ! IMPOSSIBLE !*/
+	
+/*Gestion des pertes : 
+	A l'affichage ça semble ne pas fonctionner tout le temps, pourtant la sortie est correcte*/
+	
+/*A FAIRE :
+	- Mettre en place cwnd variable
+	- Mettre en place les fonctions de RTT (cp)
+	- Installer le timeout (regarder recvfrom si on ne peut pas attendre un certain temps avant d'oublier la requête)*/
+
 void new_connexion(){
 	nbClient++;
 }
@@ -182,12 +202,14 @@ void conversation(){
 
 }
 
-
 void *send_file(void *arg ){
 
 		
 	//init local variables
 	int size_data_to_send=1;
+	//sequencing the file
+	nb_segment_total=(int)(file_size/MDS)+1;// need to add 1 to count the last segment with a fewer size
+	printf("nb segment =%d\n", nb_segment_total);	
 	char all_file[file_size];
 	int curseur=0;
 	int total_size;
@@ -196,19 +218,13 @@ void *send_file(void *arg ){
 
 	//read all file :
 	while(feof(fin)==0){
+	
 	size_data_to_send=fread(all_file+curseur,1, MDS,fin);
 	
 	curseur=curseur+size_data_to_send;
 	
 	}
 	printf("%d bytes written in all_file buffer\n",curseur);
-	
-			
-
-	//sequencing the file
-	nb_segment_total=(int)(file_size/MDS)+1;// need to add 1 to count the last segment with a fewer size
-	printf("nb segment =%d\n", nb_segment_total);
-
 		
 	
 	//beginning of the file sending
@@ -281,16 +297,22 @@ void *receive_ACK(void *arg ){
 
 	int rcvMsg_Size;	
 	char* str;
+	int last_ack=0;
+	int duplicate=0;
 	
 	do{
 		memset(recep,0,MSS);
 		
+		if(duplicate>2){
+			count=last_ack+1;
+			duplicate--; //à améliorer avec la fenêtre pas fixe
+			sleep(0.5); //a améliorer avec le RTT
+		}
+							
 		
 		//wait for ack
 			rcvMsg_Size= recvfrom(desc_data_sock,recep,MSS,0,(struct sockaddr*)&client, &alen);
-			while(rcvMsg_Size > 0) {
-			
-			
+			while(rcvMsg_Size > 0) {			
 				
 				// check if it's the good ack
 					str=strtok(recep, "_");
@@ -303,6 +325,11 @@ void *receive_ACK(void *arg ){
 						printf("received : %s_%s\n", recep,str);
 						if (atoi(str)<=count){
 							flight_size--;
+							if(atoi(str)==last_ack){
+								duplicate++;
+							}
+							last_ack=atoi(str);
+								
 						}
 						else{
 							flight_size--;
