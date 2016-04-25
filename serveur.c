@@ -1,24 +1,5 @@
 #include "serveur.h"
 
-/*Le mieux serait de faire une fonction encapsulation, appelée AVANT l'envoi du fichier et qui remplirait un tableau de chaînes de caractères (header+data). 
-On n'aura plus qu'à envoyer chaque case... 
-PB : On est obligé de connaître la longueur à l'avance et ça pose soucis pour la dernière séquence (qui est plus courte que les autres) 
-==> La mettre dans une variable à part et mettre toutes les autres séquences encapsulées dans le tableau ?*/
-/*PB du count et du fragm, est-ce que cela ne pose pas problème de les déclarer dans le .h ? 
-Ou est-ce que le fait qu'on les initialise via différents processus évite le problème ?*/
-
-/*PB de connexion de plusieurs clients :
-	- Bug d'affichage (j'ai connecté 2 clients, c'est le client 5 qui résilie la connexion...)
-	- Affichage de seulement une seule conversation(), donc pas de réception de "stop" de la part des clients>2.
-	- Une seule sortie pour plusieurs clients ! IMPOSSIBLE !*/
-	
-/*Gestion des pertes : 
-	A l'affichage ça semble ne pas fonctionner tout le temps, pourtant la sortie est correcte*/
-	
-/*A FAIRE :
-	- Mettre en place cwnd variable
-	- Mettre en place les fonctions de RTT (cp)
-	- Installer le timeout (regarder recvfrom si on ne peut pas attendre un certain temps avant d'oublier la requête)*/
 
 void new_connexion(){
 	nbClient++;
@@ -83,7 +64,7 @@ void init( ){ //initialisation des variables et création/lien socket
 
 		count=0;
 		fragm=1;
-		cwnd=8;
+		cwnd=1;
 		flight_size=0;
 
 		valid= 1;
@@ -287,7 +268,7 @@ void *send_file(void *arg ){
 	pthread_mutex_unlock(&mutex);	
 		
 	}//end of file
-
+	
 	
 	pthread_exit(NULL);	
 	
@@ -303,11 +284,7 @@ void *receive_ACK(void *arg ){
 	do{
 		memset(recep,0,MSS);
 		
-		if(duplicate>2){
-			count=last_ack+1;
-			duplicate--; //à améliorer avec la fenêtre pas fixe
-			sleep(0.5); //a améliorer avec le RTT
-		}
+		
 							
 		
 		//wait for ack
@@ -319,27 +296,48 @@ void *receive_ACK(void *arg ){
 					if(strcmp(str,"ACK")==0){
 						str=strtok(NULL, " ");
 						
-						/* critical section access to variable used by the other send, need mutex protection*/
-						pthread_mutex_lock(&mutex);
-						
-						printf("received : %s_%s\n", recep,str);
-						if (atoi(str)<=count){
+						if( atoi(str)==last_ack && duplicate >= DUPLICATE){ //after 3 duplicate ack , segment are ignored but transmission can keep going on thanks to flight_size
+							pthread_mutex_lock(&mutex);
+							
+							printf("ignored\n");
 							flight_size--;
-							if(atoi(str)==last_ack){
-								duplicate++;
+							
+							pthread_mutex_unlock(&mutex);
 							}
-							last_ack=atoi(str);
-								
-						}
+						
 						else{
+							/* critical section access to variable used by the other send, need mutex protection*/
+							pthread_mutex_lock(&mutex);
+						
+							printf("received : %s_%s\n", recep,str);
 							flight_size--;
-							count=atoi(str)+1;
-							printf("count=%d\n",count);
+						
+							if (atoi(str)<=count){
+								
+								if(atoi(str)==last_ack){//if it's a duplicate
+									duplicate++;
+								}
+								else if(duplicate!=0){
+									duplicate=0;
+								}
+								last_ack=atoi(str);
+								cwnd++;
+								
+							}
+							else{
+								count=atoi(str)+1;
+								printf("warning not possible to ACK more than count =%d\n",count);
+							}
+							if(duplicate==DUPLICATE){
+								count=last_ack+1;//send the segment last_ack+1 again
+								printf("count=%d\n",count);
+								cwnd=1;
+								flight_size=0;
+							}
+						
+							pthread_mutex_unlock(&mutex);
+							/*end of critical section */
 						}
-						
-						pthread_mutex_unlock(&mutex);
-						/*end of critical section */
-						
 						rcvMsg_Size=0; 
 					}
 						

@@ -6,10 +6,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
-#define MSS 1015 //max segment size
-#define MDS 1000
-#define H_SIZE 15 //header size
-#define NUMSEQ_SIZE 9 //nb bytes for num segment in header
+#define MSS 1036 //max segment size
+#define MDS 1024
+#define H_SIZE 12 //header size
+#define NUMSEQ_SIZE 6 //nb bytes for num segment in header
 #define FRAGM_FLAG_SIZE 1 //nb bytes for fragm flag in header
 #define DATA_SIZE 5 // nb bytes for size in header
 #define DROP 6 //the x*DROP packet is lost

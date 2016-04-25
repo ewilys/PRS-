@@ -8,12 +8,13 @@
 #include <pthread.h>
 #include <signal.h>
 
-#define MSS 1015 //max segment size
-#define MDS 1000 // max data size
-#define H_SIZE 15 //header size
-#define NUMSEQ_SIZE 9 //nb bytes for num segment in header
+#define MSS 1036 //max segment size
+#define MDS 1024 // max data size
+#define H_SIZE 12 //header size
+#define NUMSEQ_SIZE 6 //nb bytes for num segment in header
 #define FRAGM_FLAG_SIZE 1 //nb bytes for fragm flag in header
 #define DATA_SIZE 5 // nb bytes for size in header
+#define DUPLICATE 3
 
 struct sockaddr_in serveur, client, data;
 int port, port_data, connected,valid,count, nbClient;

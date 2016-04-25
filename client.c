@@ -118,7 +118,7 @@ void file_reception(){
 			
 			sprintf(msgSnd,"ACK_%d", count);
 			count++;
-			//drop_count++;
+			drop_count++;
 			
 		}
 		else{
