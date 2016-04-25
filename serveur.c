@@ -66,6 +66,8 @@ void init( ){ //initialisation des variables et création/lien socket
 		fragm=1;
 		cwnd=1;
 		flight_size=0;
+		
+		okFile=FALSE;
 
 		valid= 1;
 		connected=0;
@@ -191,84 +193,92 @@ void *send_file(void *arg ){
 	//sequencing the file
 	nb_segment_total=(int)(file_size/MDS)+1;// need to add 1 to count the last segment with a fewer size
 	printf("nb segment =%d\n", nb_segment_total);	
+	
 	char all_file[file_size];
 	int curseur=0;
 	int total_size;
-	int i=0;
+	
 	
 
 	//read all file :
 	while(feof(fin)==0){
 	
-	size_data_to_send=fread(all_file+curseur,1, MDS,fin);
+		size_data_to_send=fread(all_file+curseur,1, MDS,fin);
 	
-	curseur=curseur+size_data_to_send;
+		curseur=curseur+size_data_to_send;
 	
 	}
 	printf("%d bytes written in all_file buffer\n",curseur);
 		
 	
-	//beginning of the file sending
+	//beginning of sending the file 
 	printf("\t send_file begins\n");
 	
-	while(count<=nb_segment_total){
+	while(count<=nb_segment_total || okFile==FALSE){
 	
-	pthread_mutex_lock(&mutex);
-		
-		while(flight_size<cwnd){	
+		if(count<=nb_segment_total){
 			
-				memset(sndBuf,0,MSS);
-
-			/*update the payload */
+		
+			pthread_mutex_lock(&mutex);
+		
+			while(flight_size<cwnd){	
 			
-				//if it's the last sequence
-				if(count==nb_segment_total){
-					fragm=0;
-					printf("\tlast seq to send, reach end of file\n");
+					memset(sndBuf,0,MSS);
 
-					size_data_to_send=(int)(file_size-((count-1)*MDS));//last size to send
-
-					// copy the payload (all_file) inside the buffer to send.
-					memcpy(sndBuf+H_SIZE,all_file+(count-1)*MDS,size_data_to_send); //count-1 to start at the good offset in the buffer
-				}
-				else if (count==0){ //write the size of the file for client buffer
+				/*update the payload */
 			
-					sprintf(sndBuf+H_SIZE,"%d",file_size);
-					size_data_to_send=strlen(sndBuf+H_SIZE);
-				}
-				else{
-					fragm=1;
-					size_data_to_send=MDS;
-					// copy the payload (all_file) inside the buffer to send.
-					memcpy(sndBuf+H_SIZE,all_file+(count-1)*MDS,size_data_to_send); //count-1 to start at the good offset in the buffer
-				}
-
-			//fill the sndBuf with number of seg, flag, size of data and data from all_file
-	
-				sprintf(sndBuf,"%d",count); // write the number of sequence in the buffer
-				sprintf(sndBuf+NUMSEQ_SIZE,"%d",fragm); //write the fragmentation flag
-				sprintf(sndBuf+NUMSEQ_SIZE+FRAGM_FLAG_SIZE,"%d",size_data_to_send);// write size of the payload in the buffer
-		
-		
-				//printf("size data to send : %d and size segment to send  : %d \n", size_data_to_send,size_data_to_send+H_SIZE);
-		
-
-			//send the sequence
-				total_size=size_data_to_send+H_SIZE;
-				sendto(desc_data_sock,sndBuf,total_size,0, (struct sockaddr*)&client, alen);
-
-				flight_size++;
-				count++;
-				printf("num seq : %s\n",sndBuf);
-				if(fragm==0){
-					break;
-				}
+					//if it's the last sequence
+					if(count==nb_segment_total){
+						fragm=0;
+						printf("\tlast seq to send, reach end of file\n");
 					
-		}//end of window
-	pthread_mutex_unlock(&mutex);	
+						size_data_to_send=(int)(file_size-((count-1)*MDS));//last size to send
+
+						// copy the payload (all_file) inside the buffer to send.
+						memcpy(sndBuf+H_SIZE,all_file+(count-1)*MDS,size_data_to_send); //count-1 to start at the good offset in the buffer
+					}
+					else if (count==0){ //write the size of the file for client buffer
+			
+						sprintf(sndBuf+H_SIZE,"%d",file_size);
+						size_data_to_send=strlen(sndBuf+H_SIZE);
+					}
+					else{
+						fragm=1;
+						size_data_to_send=MDS;
+						// copy the payload (all_file) inside the buffer to send.
+						memcpy(sndBuf+H_SIZE,all_file+(count-1)*MDS,size_data_to_send); //count-1 to start at the good offset in the buffer
+					}
+
+				//fill the sndBuf with number of seg, flag, size of data and data from all_file
+	
+					sprintf(sndBuf,"%d",count); // write the number of sequence in the buffer
+					sprintf(sndBuf+NUMSEQ_SIZE,"%d",fragm); //write the fragmentation flag
+					sprintf(sndBuf+NUMSEQ_SIZE+FRAGM_FLAG_SIZE,"%d",size_data_to_send);// write size of the payload in the buffer
 		
+		
+					//printf("size data to send : %d and size segment to send  : %d \n", size_data_to_send,size_data_to_send+H_SIZE);
+		
+
+				//send the sequence
+					total_size=size_data_to_send+H_SIZE;
+					sendto(desc_data_sock,sndBuf,total_size,0, (struct sockaddr*)&client, alen);
+
+					flight_size++;
+					count++;
+					printf("num seq : %s\n",sndBuf);
+					if(fragm==0){
+						break;
+					}
+					
+			}//end of window
+			pthread_mutex_unlock(&mutex);	
+		}
 	}//end of file
 	
+	memset(sndBuf,0,MSS);
+	sprintf(sndBuf,"FIN");
+	
+	sendto(desc_data_sock,sndBuf,3,0, (struct sockaddr*)&client, alen);
 	
 	pthread_exit(NULL);	
 	
@@ -297,12 +307,9 @@ void *receive_ACK(void *arg ){
 						str=strtok(NULL, " ");
 						
 						if( atoi(str)==last_ack && duplicate >= DUPLICATE){ //after 3 duplicate ack , segment are ignored but transmission can keep going on thanks to flight_size
-							pthread_mutex_lock(&mutex);
-							
+										
 							printf("ignored\n");
-							flight_size--;
 							
-							pthread_mutex_unlock(&mutex);
 							}
 						
 						else{
@@ -330,7 +337,7 @@ void *receive_ACK(void *arg ){
 							}
 							if(duplicate==DUPLICATE){
 								count=last_ack+1;//send the segment last_ack+1 again
-								printf("count=%d\n",count);
+								//printf("count=%d\n",count);
 								cwnd=1;
 								flight_size=0;
 							}
@@ -344,7 +351,7 @@ void *receive_ACK(void *arg ){
 					
 			}
 	}while(atoi(str) != nb_segment_total);
-	
+	okFile=TRUE;
 	
 	pthread_exit(NULL);
 

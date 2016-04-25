@@ -1,5 +1,19 @@
 #include "client.h"
 
+
+int checkFin(){
+	
+	char end[3]="FIN";
+	int i;
+	for(i=0;i<3;i++){
+		if(end[i]!=msgRcv[i]){
+			return 0;
+		}
+	}
+	return 1;
+}
+
+
 void connexion(int desc){
 	printf("Initialisation \n");
 
@@ -71,24 +85,35 @@ void desencapsulation(){
 		
 	size_data_recv=recvfrom(desc, msgRcv, MSS,0,(struct sockaddr *)&addr_data, &alen);
 		//printf("size data received : %d\n",size_data_recv);
-		if(size_data_recv <0 ){
+	if(size_data_recv <0 ){
 			printf("Error : nothing received\n");
 			exit(0);
-		}			
-
-	//catch the sequence numero
+		}	
+	
+	
+	if(size_data_recv==3){
+		
+		if(checkFin()==1){	
+			okay_file=0;
+		}
+	}
+	else{
+		//catch the sequence numero
+			
 		memcpy(num_seq, msgRcv, NUMSEQ_SIZE);
-		//printf("Segment num : %s received \n", num_seq);
-	//catch the flag fragm
-		//printf("flag fragm :%c\n",msgRcv[NUMSEQ_SIZE]);
+			
+		
+		//catch the flag fragm
+			/*du coup est-ce nécessaire d'avoir des flag pour savoir le dernier segment si on attend le message fin ?*/
+		
 		if(msgRcv[NUMSEQ_SIZE]=='0'){
-			okay_file=0; //end of file
+			//okay_file=0; //end of file
 			printf("\t last seq num \n");
 		}
 		
-	//catch size of payload	
+		//catch size of payload	
 		memcpy(nb_data_rcv, msgRcv+NUMSEQ_SIZE+FRAGM_FLAG_SIZE, DATA_SIZE);
-		//printf("nb donnée recue : %s \n",nb_data_rcv);
+	}
 
 }
 
@@ -109,7 +134,9 @@ void file_reception(){
 
 		desencapsulation();
 		
-		
+		if (okay_file==0){
+			break;
+		}
 		if(atoi(num_seq)==count && drop_count<DROP){ // if it's the good sequence received
 
 			position_in_file=(count-1)*MDS;
@@ -195,7 +222,7 @@ int main (int argc, char *argv[]) {
 		printf("information exchange on port: %d \n", port_data);
 		
 		char name_output_file[100]="";
-		sprintf(name_output_file,"sortie_%s",argv[3]);
+		sprintf(name_output_file,"sortie_%d_%s",getpid(),argv[3]);
 		printf("name output file : %s \n",name_output_file);
 		
 		char* str;

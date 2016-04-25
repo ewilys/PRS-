@@ -15,6 +15,8 @@
 #define FRAGM_FLAG_SIZE 1 //nb bytes for fragm flag in header
 #define DATA_SIZE 5 // nb bytes for size in header
 #define DUPLICATE 3
+#define TRUE 1
+#define FALSE 0
 
 struct sockaddr_in serveur, client, data;
 int port, port_data, connected,valid,count, nbClient;
@@ -29,6 +31,7 @@ FILE* fin;
 
 int cwnd;
 int flight_size;
+int okFile;
 
 pthread_mutex_t mutex;
 pthread_t listener,sender;//2 thread one to send the file the other to receive ACKs

@@ -12,7 +12,7 @@
 #define NUMSEQ_SIZE 6 //nb bytes for num segment in header
 #define FRAGM_FLAG_SIZE 1 //nb bytes for fragm flag in header
 #define DATA_SIZE 5 // nb bytes for size in header
-#define DROP 6 //the x*DROP packet is lost
+#define DROP 5 //the x*DROP packet is lost
 
 struct sockaddr_in addr_serveur, addr_data;
 int port, port_data, connected, okay_file;
@@ -25,6 +25,7 @@ FILE* f_out;
 
 int drop_count;//raise until the count of packet received reach the DROP
 
+int checkFin();
 void connexion(int desc);
 int init(char* port, char* ip_addr);
 void desencapsulation();
