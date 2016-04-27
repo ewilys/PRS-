@@ -9,16 +9,17 @@ file_name= sys.argv[4]
 output_file= "output.txt"
 
 name= server_name.split("-")
-suffix= name[0][-2:]
+suffix= name[0][-1:]
+print(suffix)
 
-#client_name= "client"+suffix
-client_name="client"
+client_name= "client"+suffix
+
 
 output= open(output_file, "a")
 
 server_launch_command= "./" +server_name +" " +server_port +" &"
-#client_launch_command= "./" +client_name +" " +ip_address +" " +server_port +" " +file_name + " 0"
-client_launch_command="./"+client_name+" "+server_port+" "+ip_address+ " "+file_name
+client_launch_command= "./" +client_name +" " +ip_address +" " +server_port +" " +file_name + " 0"
+
 
 os.system(server_launch_command)
 time.sleep(1)
