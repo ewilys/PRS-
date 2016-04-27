@@ -16,7 +16,7 @@ void connexion(){ //mise en place connexion simulation demande de connexion tcp
 
 	if(msgSize>0){
 		if(strcmp(recep,"SYN")==0){
-			sprintf(sndBuf, "SYN-ACK %d", port_data);
+			sprintf(sndBuf, "SYN-ACK%d", port_data);
 
 			sendto(desc,sndBuf,sizeof(sndBuf),0, (struct sockaddr*)&client, alen);
 
@@ -190,6 +190,7 @@ void *send_file(void *arg ){
 		
 	//init local variables
 	int size_data_to_send=1;
+	
 	//sequencing the file
 	nb_segment_total=(int)(file_size/MDS)+1;// need to add 1 to count the last segment with a fewer size
 	printf("nb segment =%d\n", nb_segment_total);	
