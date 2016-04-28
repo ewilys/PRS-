@@ -1,13 +1,13 @@
 # PRS-
 
-first step : try to implant multi -thread + make a fixed window to send file as mentionned by the professor
-first step check : 
+scenario 1:
 
-at thi stage , multiple connexions are possible, each process create 2 thread from conversation. 
- 
- *depending on how the os gives the mutex to thread, sometimes the listener receive one or several ACK at a time , is it a problem ? 
- perf ? 
- 
- * display of "connection process and initialisation whenever the signal is send "==> not cool, pretty , maybe change that ? 
+serveur for client 1 :
 
-No tcp protocols implanted.
+it lacks circular buffer for the file and time out, .
+
+client 1 : send ACK in disorder, there is loss some times he sends lots of duplicate ack .
+
+to remove printf use only 2 arguments when launching , otherwise use a 3rd argument 1 preferentely
+
+needs all the other tcp protocol.
