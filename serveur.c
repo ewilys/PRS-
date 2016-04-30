@@ -16,7 +16,7 @@ void connexion(){ //mise en place connexion simulation demande de connexion tcp
 
 	if(msgSize>0){
 		if(strcmp(recep,"SYN")==0){
-			sprintf(sndBuf, "SYN-ACK%d", port_data);
+			sprintf(sndBuf, "SYN-ACK %d", port_data);
 
 			sendto(desc,sndBuf,sizeof(sndBuf),0, (struct sockaddr*)&client, alen);
 
