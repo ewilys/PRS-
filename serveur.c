@@ -5,19 +5,34 @@ void new_connexion(){
 	nbClient++;
 }
 
+long estimateRTT(double cste, long oldRTT, long mes){
+	return (cste*oldRTT + (1-cste)*mes);
+}
+
+struct timeval estimateTimeout(long RTT){
+	struct timeval newTimeout;
+	long temp=RTT*X_RTT;
+	newTimeout.tv_sec=(long)temp/MICROS;
+	newTimeout.tv_usec=(long) temp % MICROS;
+	//printf("temp: %ld ms, sec : %ld s + %ld ms\n",temp,newTimeout.tv_sec,newTimeout.tv_usec);
+	
+	return newTimeout;
+}
+
 void connexion(){ //mise en place connexion simulation demande de connexion tcp
 
 	printf("Connexion process \n");
 
 	alen= sizeof(client);
-
+	
 	msgSize= recvfrom(desc,recep,MSS,0,(struct sockaddr*)&client, &alen);
 	printf("first message received %s\n",recep);
 
 	if(msgSize>0){
 		if(strcmp(recep,"SYN")==0){
 			sprintf(sndBuf, "SYN-ACK %d", port_data);
-
+			
+			gettimeofday(&start, NULL);
 			sendto(desc,sndBuf,sizeof(sndBuf),0, (struct sockaddr*)&client, alen);
 
 			printf("Message sent: %s \n", sndBuf);
@@ -25,6 +40,16 @@ void connexion(){ //mise en place connexion simulation demande de connexion tcp
 			memset(recep,0,MSS);
 
 			msgSize=recvfrom(desc,recep,MSS,0,(struct sockaddr*)&client, &alen);
+			
+			//RTT
+			gettimeofday(&end,NULL);
+			mesure=((end.tv_sec-start.tv_sec)*MICROS)+(end.tv_usec-start.tv_usec);
+			RTT=estimateRTT(alpha, RTT, mesure);
+			//printf(" Mesure 0: %ld ms %ld ms\n",mesure, RTT);
+							
+			timeout=estimateTimeout(RTT);
+			save_timeout[0]=timeout;
+			
 			
 			if(msgSize>0){
 				if(strcmp(recep,"ACK")==0){
@@ -134,7 +159,8 @@ void conversation(){
 				
 			memset(recep,0,MSS);
 			msgSize= recvfrom(desc_data_sock,recep,MSS,0,(struct sockaddr*)&client, &alen);
-
+			
+			
 			if(msgSize > 0) {
 				
 				printf("received : %s\n", recep);
@@ -148,6 +174,7 @@ void conversation(){
 					if(fin==NULL){
 						printf("Error : file not found \n");
 						sprintf(sndBuf,"ACK_%d",nbMsg);
+						
 						sendto(desc_data_sock,sndBuf,strlen(sndBuf),0, (struct sockaddr*)&client, alen);
 						printf("%s sent \n",sndBuf);
 					}	
@@ -155,6 +182,7 @@ void conversation(){
 						file_size=catch_file_size();
 						printf("size of file : %d\n",file_size); 
 						sprintf(sndBuf,"ACK_0");
+						
 						sendto(desc_data_sock,sndBuf,strlen(sndBuf),0, (struct sockaddr*)&client, alen);
 						printf("%s sent \n",sndBuf);
 					
@@ -262,8 +290,11 @@ void *send_file(void *arg ){
 
 				//send the sequence
 					total_size=size_data_to_send+H_SIZE;
+					gettimeofday( &start,NULL);
 					sendto(desc_data_sock,sndBuf,total_size,0, (struct sockaddr*)&client, alen);
-
+					
+					save_start[count % MAX_RTT]=start;
+					
 					flight_size++;
 					count++;
 					printf("num seq : %s\n",sndBuf);
@@ -285,23 +316,40 @@ void *send_file(void *arg ){
 	
 }
 
+
 void *receive_ACK(void *arg ){
 
-	int rcvMsg_Size;	
+	int rcvMsg_Size,rep;	
 	char* str;
 	int last_ack=0;
 	int duplicate=0;
+	fd_set readfs;
+	
+	FD_ZERO(&readfs);
+	FD_SET(desc_data_sock,&readfs);
 	
 	do{
-		memset(recep,0,MSS);
-		
-		
+		memset(recep,0,MSS);	
 							
 		
 		//wait for ack
-			rcvMsg_Size= recvfrom(desc_data_sock,recep,MSS,0,(struct sockaddr*)&client, &alen);
-			while(rcvMsg_Size > 0) {			
+			printf("timeout %d : %ld ms \n", last_ack, save_timeout[last_ack % MAX_RTT].tv_usec);
+			rep= select(desc_data_sock+1,&readfs,NULL,NULL,&save_timeout[last_ack % MAX_RTT]);
+			
+			
+			if(rep ==0){//timeout, no ack received before time is running out : congestion
+				count=last_ack+1;//send the segment last_ack+1 again
+				cwnd=1;
+				flight_size=0;
+			}
+			else if (rep ==-1){
+				perror("Error, select failed\n");
+				exit(0);
+			}
+			else if(FD_ISSET(desc_data_sock,&readfs)){			
 				
+				rcvMsg_Size= recvfrom(desc_data_sock,recep,MSS,0,(struct sockaddr*)&client, &alen);
+				if(rcvMsg_Size>0){
 				// check if it's the good ack
 					str=strtok(recep, "_");
 					if(strcmp(str,"ACK")==0){
@@ -317,6 +365,18 @@ void *receive_ACK(void *arg ){
 							/* critical section access to variable used by the other send, need mutex protection*/
 							pthread_mutex_lock(&mutex);
 						
+							if (atoi(str)!=last_ack){
+							
+								gettimeofday(&end,NULL);
+								mesure=((end.tv_sec-save_start[atoi(str) % MAX_RTT].tv_sec)*MICROS)+(end.tv_usec-save_start[atoi(str) % MAX_RTT].tv_usec);
+								RTT=estimateRTT(alpha, RTT, mesure);
+								printf(" Mesure %d: %ld ms %ld ms\n",atoi(str),mesure, RTT);
+							
+								timeout=estimateTimeout(RTT);
+								save_timeout[atoi(str) % MAX_RTT]=timeout;
+								
+							}
+							
 							printf("received : %s_%s\n", recep,str);
 							flight_size--;
 						
@@ -349,7 +409,7 @@ void *receive_ACK(void *arg ){
 						rcvMsg_Size=0; 
 					}
 						
-					
+				}	
 			}
 	}while(atoi(str) != nb_segment_total);
 	okFile=TRUE;
@@ -405,6 +465,7 @@ int main (int argc, char *argv[]) {
 				/* Clean up and exit */
 				pthread_attr_destroy(&attr_listener);
 				pthread_attr_destroy(&attr_sender);
+				
 				pthread_mutex_destroy(&mutex);
 				close(desc_data_sock);//closing communication socket
 				exit(nbClient);
