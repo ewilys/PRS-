@@ -103,8 +103,6 @@ void desencapsulation(){
 		memcpy(num_seq, msgRcv, NUMSEQ_SIZE);
 			
 		
-		//catch the flag fragm
-			/*du coup est-ce nécessaire d'avoir des flag pour savoir le dernier segment si on attend le message fin ?*/
 		
 		if(msgRcv[NUMSEQ_SIZE]=='0'){
 			//okay_file=0; //end of file
