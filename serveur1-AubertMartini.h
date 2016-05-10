@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -13,7 +14,7 @@
 
 #define NUMSEQ_SIZE 6 //nb bytes for num segment in header
 
-#define MAX_SIZE_BUFCIRCULAIRE 250000
+#define MAX_SIZE_BUFCIRCULAIRE 10159200 //memory size for the file : 10,16Mo
 #define DUPLICATE 2
 #define RWND 100
 
@@ -36,6 +37,9 @@ int flight_size;
 int okFile;
 int debug;
 int ssthresh;
+
+int readFile;
+int size_to_read;
 
 pthread_mutex_t mutex;
 pthread_t listener,sender;//2 thread one to send the file the other to receive ACKs
