@@ -117,6 +117,7 @@ void init( ){ //initialisation des variables et création/lien socket
 		count=1;
 		cwnd=1;
 		flight_size=0;
+		ssthresh=512;
 		
 		okFile=FALSE;
 
@@ -217,6 +218,13 @@ void conversation(){
 
 }
 
+int min(int cwnd, int rwnd){
+	if (cwnd>=rwnd)
+		return rwnd;
+	else 
+		return cwnd;
+}
+
 void *send_file(void *arg ){
 
 		
@@ -230,7 +238,7 @@ void *send_file(void *arg ){
 	char all_file[file_size];
 	int curseur=0;
 	int total_size;
-	
+	int window=cwnd;
 	
 
 	//read all file :
@@ -253,8 +261,8 @@ void *send_file(void *arg ){
 			
 		
 			pthread_mutex_lock(&mutex);
-		
-			while(flight_size<cwnd){	
+			window=min((int)cwnd,RWND);
+			while(flight_size<window){	
 			
 					memset(sndBuf,0,MSS);
 
@@ -330,7 +338,7 @@ void *receive_ACK(void *arg ){
 					
 					if(checkACK()==TRUE){
 						str=str_sub(3,strlen(recep));						
-						if( atoi(str)==last_ack && duplicate >= DUPLICATE){ //after 3 duplicate ack , segment are ignored but transmission can keep going on thanks to flight_size
+						if( atoi(str)<=last_ack && duplicate >= DUPLICATE){ //after 3 duplicate ack , segment are ignored but transmission can keep going on thanks to flight_size
 										
 							if(debug==TRUE){printf("ignored\n");}
 							
@@ -342,35 +350,41 @@ void *receive_ACK(void *arg ){
 						
 							if(debug==TRUE){printf("received : %s\n", recep);}
 							
-							cwnd++;
-							if (atoi(str)<=count){
+							
+							if (atoi(str)<=count-1){
 								
 								if(atoi(str)==last_ack){//if it's a duplicate
 									duplicate++;
 								}
-								
-								
-								if( atoi(str)==count){ 
-									flight_size=0;
-									last_ack=atoi(str);
-								} 	
-								else if(atoi(str)<=last_ack){
-									flight_size--;
-								}
-								else {//if count > ack > last_ack
+																
+								if (last_ack< atoi(str) && atoi(str)<=count-1){//if count > ack > last_ack
 									duplicate=0;
+									if (cwnd >ssthresh){//congestion avoidance
+										if (debug ==TRUE){printf("congestion avoidance\n");}
+										cwnd+= (1/cwnd)*(atoi(str)-last_ack);
+										}
+									else{
+										cwnd=cwnd+(atoi(str)-last_ack);
+									}
 									flight_size=count-atoi(str)-1;
 									last_ack=atoi(str);
+									
 									}
 								
 								
 							}
-							else{//after retransmission serveur can receive a ack > count
-								count=atoi(str);
+							else if(atoi(str)>=count-1){//after retransmission serveur can receive a ack > count
+								if (debug ==TRUE){printf("fast retransmit\n");}
+								duplicate=0;
+								count=atoi(str)+1;
+								last_ack=atoi(str);
 								flight_size=0;
+								cwnd=ssthresh;//fast recovery
 							
 							}
 							if(duplicate==DUPLICATE){
+								if (debug ==TRUE){printf("retransmission\n");}
+								ssthresh=cwnd/2;
 								count=last_ack+1;//send the segment last_ack+1 again
 								cwnd=1;
 								flight_size=0;
@@ -419,30 +433,29 @@ int main (int argc, char *argv[]) {
 		}
 		port=atoi(argv[1]);
 		nbClient=1;
-		while(1){
+				
 			
-			
-			port_data=port+nbClient; 
+		port_data=port+nbClient; 
 			
 				
-  				init();
-				connexion();
+  		init();
+		connexion();
 				
-						
-				close(desc); //closing control socket
-				
-				if(debug==TRUE){
-					printf("information exchange on port : %d \n",port_data); 
-				}
-				conversation();
-				
-				/* Clean up and exit */
-				pthread_attr_destroy(&attr_listener);
-				pthread_attr_destroy(&attr_sender);
-				pthread_mutex_destroy(&mutex);
-				close(desc_data_sock);//closing communication socket
+					
+		close(desc); //closing control socket
 			
+		if(debug==TRUE){
+			printf("information exchange on port : %d \n",port_data); 
 		}
+		conversation();
+		
+		/* Clean up and exit */
+		pthread_attr_destroy(&attr_listener);
+		pthread_attr_destroy(&attr_sender);
+		pthread_mutex_destroy(&mutex);
+		close(desc_data_sock);//closing communication socket
+			
+		
 	}
 	
 			
