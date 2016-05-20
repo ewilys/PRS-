@@ -16,7 +16,11 @@
 
 #define MAX_SIZE_BUFCIRCULAIRE 10159200 //memory size for the file : 10,16Mo
 #define DUPLICATE 2
-#define RWND 100
+#define RWND 50
+
+#define NANO 1000000000
+#define MAX_RTT 100
+#define X_RTT 6
 
 #define TRUE 1
 #define FALSE 0
@@ -28,6 +32,8 @@ int desc,desc_data_sock;
 int msgSize;
 int file_size;
 int nb_segment_total;
+int seg_lost[RWND];
+int nb_seg_lost;
 char recep[MSS], sndBuf[MSS];
 socklen_t alen;
 FILE* fin;
@@ -38,6 +44,11 @@ int okFile;
 int debug;
 int ssthresh;
 
+struct timespec start, end, timeout;
+struct timespec save_timeout[MAX_RTT],save_start[MAX_RTT];
+long mesure, RTT;
+double alpha;
+
 int readFile;
 int size_to_read;
 
@@ -47,10 +58,12 @@ pthread_attr_t attr_listener,attr_sender;
 
 void connexion();
 int checkACK();
-char *str_sub ( int start,  int end);
+long estimateRTT(double, long, long);
+struct timespec estimateTimeout(long);
+char *str_sub ( int ,  int );
 void init();
 void conversation();
 int min(int, int);
-void *send_file(void *arg);
+void *send_file(void *);
 void *receive_ACK(void *);
 int catch_file_size();
