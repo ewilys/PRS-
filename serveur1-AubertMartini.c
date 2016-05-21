@@ -300,57 +300,60 @@ void *send_file(void *arg ){
 			
 			readFile=FALSE;
 		}	
-		if(count<=nb_segment_total){	
+		
 			
-			window=min((int)cwnd,RWND);
+		window=min((int)cwnd,RWND);
 			
-			while(flight_size<window){	
+		while(flight_size<window && count != nb_segment_total+1){	
+			
 				if(debug==TRUE){printf("\t window : %d\n",window);}
-					memset(sndBuf,0,MSS);
+				memset(sndBuf,0,MSS);
 
 				/*update the payload */
 					
-					if(nb_seg_lost!=0){// send those who need to be retransmit only
-						for(i=ptSeg_lost;i<nb_seg_lost;i++){
-							memset(sndBuf,0,MSS);
-							if(seg_lost[i]==nb_segment_total){
-								size_data_to_send=(int)(file_size-((seg_lost[i]-1)*MDS));
-							}
-							else{
-								size_data_to_send=MDS;
-							}
-							memcpy(sndBuf+NUMSEQ_SIZE,all_file+((seg_lost[i]-1)*MDS)%MAX_SIZE_BUFCIRCULAIRE,size_data_to_send); 
-							sprintf(sndBuf,"%d",seg_lost[i]); // write the number of sequence in the buffer
-							total_size=size_data_to_send+NUMSEQ_SIZE;
-							gettimeofday( &start,NULL);
-							sendto(desc_data_sock,sndBuf,total_size,0, (struct sockaddr*)&client, alen);
-					
-							save_start[seg_lost[i] % MAX_RTT]=start;
-
-							flight_size++;
-							ptSeg_lost++;
-							if(debug==TRUE){printf("num seq : %s et fs:%d\n",sndBuf,flight_size);}
-							if(seg_lost[i]==count){count++;}
-							if(size_data_to_send<MDS || flight_size==window){//if it's the last segment
-								break;
-							}
-						}
-						if(ptSeg_lost==nb_seg_lost){
-							if(debug==TRUE){printf("remise à zero tous les seg perdus ont été retransmis\n");}
-							ptSeg_lost=0;
-							nb_seg_lost=0;
+				if(nb_seg_lost!=0){// send those who need to be retransmit only
+					for(i=ptSeg_lost;i<nb_seg_lost;i++){
+						memset(sndBuf,0,MSS);
+						if(seg_lost[i]==nb_segment_total){
+							size_data_to_send=(int)(file_size-((seg_lost[i]-1)*MDS));
 						}
 						else{
-							if(debug==TRUE){printf("il reste des seg perdus non retransmis\n");}
+							size_data_to_send=MDS;
 						}
-					}	
+						memcpy(sndBuf+NUMSEQ_SIZE,all_file+((seg_lost[i]-1)*MDS)%MAX_SIZE_BUFCIRCULAIRE,size_data_to_send); 
+						sprintf(sndBuf,"%d",seg_lost[i]); // write the number of sequence in the buffer
+						total_size=size_data_to_send+NUMSEQ_SIZE;
+						gettimeofday( &start,NULL);
+						sendto(desc_data_sock,sndBuf,total_size,0, (struct sockaddr*)&client, alen);
+					
+						save_start[seg_lost[i] % MAX_RTT]=start;
+
+						flight_size++;
+						ptSeg_lost++;
+						if(debug==TRUE){printf("num seq : %s et fs:%d\n",sndBuf,flight_size);}
+						if(seg_lost[i]==count){count++;}
+						if(size_data_to_send<MDS || flight_size==window){//if it's the last segment
+							break;
+						}
+					}
+					if(ptSeg_lost==nb_seg_lost){
+						if(debug==TRUE){printf("remise à zero tous les seg perdus ont été retransmis\n");}
+						ptSeg_lost=0;
+						nb_seg_lost=0;
+					}
+					else{
+						if(debug==TRUE){printf("il reste des seg perdus non retransmis\n");}
+					}
+				}	
 					
 					
-					if(flight_size == window){
+				if(flight_size == window){
 						
-						if(debug==TRUE){printf("fs=win break \n");}
-						break;
-					}	
+					if(debug==TRUE){printf("fs=win break \n");}
+					break;
+				}
+					
+				if(count<=nb_segment_total){		
 					//if it's the last sequence
 					if(count==nb_segment_total){
 						
@@ -362,7 +365,7 @@ void *send_file(void *arg ){
 						memcpy(sndBuf+NUMSEQ_SIZE,all_file+((count-1)*MDS)%MAX_SIZE_BUFCIRCULAIRE,size_data_to_send); //count-1 to start at the good offset in the buffer
 					}
 					
-					else{
+					else {
 						
 						size_data_to_send=MDS;
 						// copy the payload (all_file) inside the buffer to send.
@@ -409,6 +412,7 @@ void *receive_ACK(void *arg ){
 	int rcvMsg_Size;	
 	char* str="0";
 	int last_ack=0;
+	int new_timeout=0;
 	int duplicate=0;
 	int x=1;
 	int rep=0;
@@ -422,16 +426,16 @@ void *receive_ACK(void *arg ){
 		FD_SET(desc_data_sock,&readfs);
 		
 		
-		rep= pselect(desc_data_sock+1,&readfs,NULL,NULL,&save_timeout[last_ack % MAX_RTT],NULL);
+		rep= pselect(desc_data_sock+1,&readfs,NULL,NULL,&save_timeout[new_timeout % MAX_RTT],NULL);
 			
 			
 		if(rep ==0 ){//timeout, no ack received before time is running out : congestion
-			if(debug==TRUE){printf(" congestion, timeout for %d retransmission : %d\n",last_ack,last_ack+1);}
+			if(debug==TRUE ){printf(" congestion, timeout retransmission : %d\n",last_ack+1);}
 			pthread_mutex_lock(&mutex);
 			ssthresh=min((int)cwnd,RWND)/2;
 			seg_lost[nb_seg_lost]=last_ack+1;
 			nb_seg_lost++;
-			flight_size--;
+			flight_size--;//compulsory for sendinf back the ack
 			retransmission=TRUE;
 			pthread_mutex_unlock(&mutex);
 			
@@ -459,7 +463,7 @@ void *receive_ACK(void *arg ){
 							if(atoi(str)==last_ack){
 								duplicate++;
 								pthread_mutex_lock(&mutex);
-								cwnd++; //pour eviter touts les ignored 
+								cwnd++; //pour eviter tous les ignored 
 								pthread_mutex_unlock(&mutex);
 							}
 							
@@ -477,6 +481,7 @@ void *receive_ACK(void *arg ){
 							
 								timeout=estimateTimeout(RTT);
 								save_timeout[atoi(str) % MAX_RTT]=timeout;
+								new_timeout=atoi(str);
 								
 							}
 							/* critical section access to variable used by the other send, need mutex protection*/
@@ -495,7 +500,8 @@ void *receive_ACK(void *arg ){
 									if(retransmission==TRUE){
 										retransmission=FALSE;
 										cwnd=ssthresh+duplicate;//pb niveau ssthresh
-										}
+										if(debug==TRUE){printf("\t  cwnd: %f \n",cwnd);}
+									}
 									if (cwnd >ssthresh){//congestion avoidance
 										if (debug ==TRUE){printf("congestion avoidance\n");}
 										cwnd+= (1/cwnd)*(atoi(str)-last_ack);
