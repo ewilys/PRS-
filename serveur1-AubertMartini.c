@@ -296,7 +296,8 @@ void *send_file(void *arg ){
 				}
 				size_data_to_send=fread(all_file+(curseur % MAX_SIZE_BUFCIRCULAIRE),1, size_to_read,fin);
 				curseur=curseur+size_data_to_send;
-				if(debug==TRUE){printf("%d/%d bytes written in all_file buffer (%d this time)\n",curseur, file_size, size_data_to_send);}
+				
+				if(debug==TRUE){printf("%d/%d bytes written in all_file buffer (%d this time) rep ferror %d\n",curseur, file_size, size_data_to_send,ferror(fin));}
 			}
 			
 			readFile=FALSE;

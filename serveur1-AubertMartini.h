@@ -14,7 +14,7 @@
 
 #define NUMSEQ_SIZE 6 //nb bytes for num segment in header
 
-#define MAX_SIZE_BUFCIRCULAIRE 10159200 //memory size for the file : 10,16Mo
+#define MAX_SIZE_BUFCIRCULAIRE 1000980 //memory size for the file : 1Mo 670 packet de 1494 octets
 #define DUPLICATE 2
 #define RWND 50
 
