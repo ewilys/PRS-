@@ -1,4 +1,4 @@
-#include "serveur1-AubertMartini.h"
+#include "serveur2-AubertMartini.h"
 
 int checkACK(){
 	
@@ -12,8 +12,15 @@ int checkACK(){
 	return 1;
 }
 
+struct timeval estimateRTT(struct timeval oldRTT, long alpha, struct timeval mesure){
+	struct timeval newRTT;
+	newRTT.tv_sec = alpha*(long)oldRTT.tv_sec + (1-alpha)*(long)mesure.tv_sec;
+	newRTT.tv_usec = alpha*(long)oldRTT.tv_usec + (1-alpha)*(long)mesure.tv_usec;
+	return newRTT;
+}
 
-char *str_sub ( int start,  int end)
+
+char *str_sub (int start,  int end)
 {
    char *new_s = NULL;
 
@@ -116,7 +123,12 @@ void init( ){ //initialisation des variables et création/lien socket
 
 		count=1;
 		cwnd=1;
-		flight_size=0;
+		flight_size=cwnd;
+		//ssthresh=512;
+		RTT.tv_sec=1;
+		RTT.tv_usec=0;
+		timeout.tv_sec = 1;
+		timeout.tv_usec = 0;
 		
 		okFile=FALSE;
 
@@ -134,6 +146,7 @@ void init( ){ //initialisation des variables et création/lien socket
 			perror("cannot create socket\n");
 			exit(-1);
 		}
+		
 	
 	//allow reuse of sockets
 		setsockopt(desc, SOL_SOCKET, SO_REUSEADDR, &valid, sizeof(int));
@@ -217,6 +230,13 @@ void conversation(){
 
 }
 
+double min(double cwnd, double rwnd){
+	if (cwnd>=rwnd)
+		return rwnd;
+	else 
+		return cwnd;
+}
+
 void *send_file(void *arg ){
 
 		
@@ -230,7 +250,7 @@ void *send_file(void *arg ){
 	char all_file[file_size];
 	int curseur=0;
 	int total_size;
-	
+	//double window=cwnd;
 	
 
 	//read all file :
@@ -253,9 +273,12 @@ void *send_file(void *arg ){
 			
 		
 			pthread_mutex_lock(&mutex);
-		
-			while(flight_size<cwnd){	
-			
+			//window=min(cwnd,(double)RWND);
+			//printf("Sender : FlightSize= %f CWND= %f\n", flight_size, cwnd);
+			while((int)flight_size!=0){	
+				
+				//sleep(1);
+				
 					memset(sndBuf,0,MSS);
 
 				/*update the payload */
@@ -286,9 +309,10 @@ void *send_file(void *arg ){
 				//send the sequence
 					total_size=size_data_to_send+NUMSEQ_SIZE;
 					sendto(desc_data_sock,sndBuf,total_size,0, (struct sockaddr*)&client, alen);
+					gettimeofday(&start, NULL);
 
-					flight_size++;
-					count++;
+					flight_size--;
+					//count++;
 					if(debug==TRUE){printf("num seq : %s\n",sndBuf);}
 					
 					if(size_data_to_send<MDS){//if it's the last segment
@@ -296,6 +320,7 @@ void *send_file(void *arg ){
 					}
 					
 			}//end of window
+			//printf("Sender : out of loop\n");
 			pthread_mutex_unlock(&mutex);	
 		}
 	}//end of file
@@ -312,83 +337,63 @@ void *send_file(void *arg ){
 void *receive_ACK(void *arg ){
 
 	int rcvMsg_Size;	
-	char* str;
+	char* str="0";
 	int last_ack=0;
-	int duplicate=0;
+	count=1;
+	fd_set readfs;
+	int rep;
+	//int duplicate=0;
+	//int count_ack=0;
 	
 	do{
 		memset(recep,0,MSS);
-		
-		
-							
-		
-		//wait for ack
-			rcvMsg_Size= recvfrom(desc_data_sock,recep,MSS,0,(struct sockaddr*)&client, &alen);
+		FD_ZERO(&readfs);
+		FD_SET(desc_data_sock,&readfs);
+		rep=select(desc_data_sock+1, &readfs, NULL, NULL, &timeout);
+		if(rep == 0){//timeout
+			pthread_mutex_lock(&mutex);
+			count=last_ack+1;
+			flight_size=1;
+			pthread_mutex_unlock(&mutex);
+			timeout.tv_sec = 3*RTT.tv_sec;
+			timeout.tv_usec = 3*RTT.tv_usec;
+		}
+		else{
+			//wait for ack
+			rcvMsg_Size= recvfrom(desc_data_sock,recep,MSS,MSG_DONTWAIT,(struct sockaddr*)&client, &alen);
+			gettimeofday(&end, NULL);
+			timersub(&end, &start, &t_elapsed);
+			RTT=estimateRTT(RTT, cste, t_elapsed);
 			while(rcvMsg_Size > 0) {			
+			// check if it's the good ack
+				if(checkACK()==TRUE){
+					str=str_sub(3,strlen(recep));
+					/* critical section access to variable used by the other send, need mutex protection*/
+					pthread_mutex_lock(&mutex);
 				
-				// check if it's the good ack
-					
-					if(checkACK()==TRUE){
-						str=str_sub(3,strlen(recep));						
-						if( atoi(str)==last_ack && duplicate >= DUPLICATE){ //after 3 duplicate ack , segment are ignored but transmission can keep going on thanks to flight_size
-										
-							if(debug==TRUE){printf("ignored\n");}
-							
-							}
-						
-						else{
-							/* critical section access to variable used by the other send, need mutex protection*/
-							pthread_mutex_lock(&mutex);
-						
-							if(debug==TRUE){printf("received : %s\n", recep);}
-							
-							cwnd++;
-							if (atoi(str)<=count){
-								
-								if(atoi(str)==last_ack){//if it's a duplicate
-									duplicate++;
-								}
-								
-								
-								if( atoi(str)==count){ 
-									flight_size=0;
-									last_ack=atoi(str);
-								} 	
-								else if(atoi(str)<=last_ack){
-									flight_size--;
-								}
-								else {//if count > ack > last_ack
-									duplicate=0;
-									flight_size=count-atoi(str)-1;
-									last_ack=atoi(str);
-									}
-								
-								
-							}
-							else{//after retransmission serveur can receive a ack > count
-								count=atoi(str);
-								flight_size=0;
-							
-							}
-							if(duplicate==DUPLICATE){
-								count=last_ack+1;//send the segment last_ack+1 again
-								cwnd=1;
-								flight_size=0;
-							}
-						
-							pthread_mutex_unlock(&mutex);
-							/*end of critical section */
-						}
-						rcvMsg_Size=0; 
+					if(atoi(str)==last_ack){//duplicate ACK
+						count=atoi(str)+1;
+						//last_ack=atoi(str);
+						if(debug==TRUE) printf("Last_ack = %d\n", last_ack);
+						if(count<0) count=1;
+						flight_size=1;
 					}
-						
-					
+					else if(atoi(str)>last_ack){
+						flight_size=1;
+						last_ack=atoi(str);
+						if(debug==TRUE) printf("Last_ack = %d\n", last_ack);
+						count=atoi(str)+1;
+					}
+				}
+				rcvMsg_Size=0;				
 			}
+			pthread_mutex_unlock(&mutex);
+		}
+		/*end of critical section */
 	}while(atoi(str) != nb_segment_total);
 	okFile=TRUE;
 	
 	pthread_exit(NULL);
-
 }
 
 
@@ -419,30 +424,29 @@ int main (int argc, char *argv[]) {
 		}
 		port=atoi(argv[1]);
 		nbClient=1;
-		while(1){
+				
 			
-			
-			port_data=port+nbClient; 
+		port_data=port+nbClient; 
 			
 				
-  				init();
-				connexion();
+  		init();
+		connexion();
 				
-						
-				close(desc); //closing control socket
-				
-				if(debug==TRUE){
-					printf("information exchange on port : %d \n",port_data); 
-				}
-				conversation();
-				
-				/* Clean up and exit */
-				pthread_attr_destroy(&attr_listener);
-				pthread_attr_destroy(&attr_sender);
-				pthread_mutex_destroy(&mutex);
-				close(desc_data_sock);//closing communication socket
+					
+		close(desc); //closing control socket
 			
+		if(debug==TRUE){
+			printf("information exchange on port : %d \n",port_data); 
 		}
+		conversation();
+		
+		/* Clean up and exit */
+		pthread_attr_destroy(&attr_listener);
+		pthread_attr_destroy(&attr_sender);
+		pthread_mutex_destroy(&mutex);
+		close(desc_data_sock);//closing communication socket
+			
+		
 	}
 	
 			
