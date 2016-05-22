@@ -20,7 +20,7 @@
 
 #define NANO 1000000000
 #define MAX_RTT 100
-#define X_RTT 6
+#define X_RTT 3
 
 #define TRUE 1
 #define FALSE 0
