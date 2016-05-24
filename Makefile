@@ -4,7 +4,7 @@
 #########################################################
 
 CC = gcc
-FLAGS = -pthread
+FLAGS = -pthread -g
 
 all : clean serveur1-AubertMartini
 
