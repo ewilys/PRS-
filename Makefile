@@ -6,13 +6,13 @@
 CC = gcc
 FLAGS = -lpthread
 
-all : clean Serveur3-AubertMartini
+all : clean serveur2-AubertMartini
 
-Serveur3-AubertMartini : Serveur3-AubertMartini.c Serveur3-AubertMartini.h
-	${CC} Serveur3-AubertMartini.c -o Serveur3-AubertMartini ${FLAGS}
+serveur2-AubertMartini : serveur2-AubertMartini.c serveur2-AubertMartini.h
+	${CC} serveur2-AubertMartini.c -o serveur2-AubertMartini ${FLAGS}
 	
 
 
 #Pour nettoyer (enlever tous les fichiers générés
 clean :
-	\rm -f *.o *~ Serveur3 copy_*
+	\rm -f *.o *~ serveur2 copy_*
