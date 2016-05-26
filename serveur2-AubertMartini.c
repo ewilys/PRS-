@@ -220,9 +220,7 @@ void conversation(){
 		 				 /* Wait for all threads to complete */
 		  
 		    				pthread_join(sender, NULL);
-		    				printf("Sender dead\n");
 		    				pthread_join(listener, NULL);
-		    				printf("Listener dead\n");
 		  				if(debug==TRUE){printf ("conversation(): Waited on 2 thread. Done.\n");}
 				}
 					
@@ -277,22 +275,6 @@ void *send_file(void *arg ){
 	while( okFile==FALSE){
 		
 		pthread_mutex_lock(&mutex);
-		
-		/*if(readFile == TRUE){
-			if(curseur<file_size){
-				if ((curseur % MAX_SIZE_BUFCIRCULAIRE)+size_to_read > MAX_SIZE_BUFCIRCULAIRE){
-					size_data_to_send=fread(all_file+(curseur % MAX_SIZE_BUFCIRCULAIRE),1,(MAX_SIZE_BUFCIRCULAIRE-(curseur % MAX_SIZE_BUFCIRCULAIRE)),fin);
-					curseur=curseur+size_data_to_send;
-					size_to_read-=size_data_to_send;
-					if(debug==TRUE){printf("%d curseur  %d size to read\n",curseur, size_to_read);}
-				}
-				size_data_to_send=fread(all_file+(curseur % MAX_SIZE_BUFCIRCULAIRE),1, size_to_read,fin);
-				curseur=curseur+size_data_to_send;
-				if(debug==TRUE){printf("%d/%d bytes written in all_file buffer (%d this time)\n",curseur, file_size, size_data_to_send);}
-			
-				readFile=FALSE;	
-			}
-		}*/
 			
 			if(count<=nb_segment_total){
 			
@@ -347,31 +329,14 @@ void *send_file(void *arg ){
 				}
 				pthread_mutex_unlock(&mutex);
 			}
-			printf("Out of the snd loop\n");
 		//end of file
 		
-	FD_ZERO(&readfs);
-	FD_SET(desc_data_sock,&readfs);
-	printf("Avant de réinitialiser le buffer\n");
 	memset(sndBuf,0,MSS);
-	/*struct timeval tmp;
-	tmp.tv_sec=10;
-	tmp.tv_usec=0;
-	int i=1;
 	
-	while(i != 0){
-		tmp.tv_sec=10;
-		select(desc_data_sock+1, NULL, &readfs, NULL, &tmp);
-	}
-	
-	printf("Select unblocked\n");*/
-	printf("Ecriture dans le buffer\n");
 	sprintf(sndBuf,"FIN");
-	printf("Envoi du fin\n");
-	sleep(5);
-	sendto(desc_data_sock,sndBuf,3,0, (struct sockaddr*)&client, alen);
-	printf("FIN envoyé\n");
-	sleep(5);
+	
+	sendto(desc_data_sock,sndBuf,4,0, (struct sockaddr*)&client, alen);
+	
 	pthread_exit(NULL);	
 	
 }
@@ -407,7 +372,7 @@ void *receive_ACK(void *arg ){
 			pthread_mutex_unlock(&mutex);
 			timeout.tv_sec = 3*RTT.tv_sec;
 			timeout.tv_usec = 3*RTT.tv_usec;
-			if(timeout.tv_usec <= 500) timeout.tv_usec = 500;
+			if(timeout.tv_usec <= 5000) timeout.tv_usec = 5000;
 			
 		}
 		else{
@@ -455,14 +420,7 @@ void *receive_ACK(void *arg ){
 						last_ack = atoi(str);
 					}
 				}
-				printf("x = %d\n", x);
-				if(last_ack >= x*(MAX_SIZE_BUFCIRCULAIRE/(2*MDS))){
-						x++;
-						size_to_read=MAX_SIZE_BUFCIRCULAIRE/2;								
-						readFile=TRUE;
-						//cwnd=1;
-						//flight_size= 1;
-				}
+				
 				rcvMsg_Size=0;				
 			}
 			pthread_mutex_unlock(&mutex);
@@ -517,7 +475,6 @@ int main (int argc, char *argv[]) {
 			printf("information exchange on port : %d \n",port_data); 
 		}
 		conversation();
-		printf("Conversation ended, killing thread and close socket");
 		/* Clean up and exit */
 		pthread_attr_destroy(&attr_listener);
 		pthread_attr_destroy(&attr_sender);
