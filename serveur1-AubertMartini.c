@@ -152,7 +152,7 @@ void init( ){ //initialisation des variables et création/lien socket
 		nb_seg_lost=0;
 		
 		RTT=1000000000;//1sec
-		alpha=0.8;
+		alpha=ALPHA;
 		
 		size_to_read=MAX_SIZE_BUFCIRCULAIRE;
 		
@@ -230,6 +230,7 @@ void conversation(){
 					
 				if(fin==NULL){
 					perror("Error : file not found \n");
+					fclose(fin);
 				}
 				else{
 					file_size=catch_file_size();
@@ -247,7 +248,7 @@ void conversation(){
 		  				if(debug==TRUE){printf ("conversation(): Waited on 2 thread. Done.\n");}
 				}
 					
-					
+				fclose(fin);
 				memset(sndBuf,0,MSS);
 				memset(recep,0,MSS);
 					
@@ -291,7 +292,10 @@ void *send_file(void *arg ){
 		if(readFile==TRUE){
 			//read all file :
 			if(curseur<file_size){
-				if(debug==TRUE){printf("avant ecriture %d curseur  %d size to read\n",curseur, size_to_read);}
+
+				if(debug==TRUE){printf("avant ecriture %d curseur d'ou dans buffer %d, %d size to read\n",curseur, (curseur % MAX_SIZE_BUFCIRCULAIRE),size_to_read);}
+				
+
 				if ((curseur % MAX_SIZE_BUFCIRCULAIRE)+size_to_read > MAX_SIZE_BUFCIRCULAIRE){
 						//when size-to-read overcome max size buf circu
 					size_data_to_send=fread(all_file+(curseur % MAX_SIZE_BUFCIRCULAIRE),1,(MAX_SIZE_BUFCIRCULAIRE-(curseur % MAX_SIZE_BUFCIRCULAIRE)),fin);
@@ -416,8 +420,8 @@ void *send_file(void *arg ){
 	memset(sndBuf,0,MSS);
 	sprintf(sndBuf,"FIN");
 	if(debug==TRUE){printf("FIN send\n");}
-	sendto(desc_data_sock,sndBuf,3,0, (struct sockaddr*)&client, alen);
-	
+	int rep =sendto(desc_data_sock,sndBuf,4,0, (struct sockaddr*)&client, alen);
+	if(debug==TRUE){printf("rep %d\n",rep);}
 	pthread_exit(NULL);	
 	
 }
@@ -432,8 +436,7 @@ void *receive_ACK(void *arg ){
 	int x=1;
 	int rep=0;
 	int retransmission=0;
-	//int nb_loop_retransmission=0;
-	//int retransmission=FALSE;
+
 	fd_set readfs;
 	
 	
@@ -512,8 +515,7 @@ void *receive_ACK(void *arg ){
 						}
 						
 						else{
-							
-							
+
 							/* critical section access to variable used by the other send, need mutex protection*/
 							
 						
@@ -529,19 +531,20 @@ void *receive_ACK(void *arg ){
 								if (last_ack< atoi(str) && atoi(str)<=count-1){//if count > ack > last_ack
 									flight_size=count-atoi(str)-1;
 									retransmission=0;
-									//nb_loop_retransmission=0;
-									/*if(retransmission==TRUE){
-										retransmission=FALSE;
-										cwnd=sshthresh+duplicate;//test 
-										if(debug==TRUE){printf("\t  cwnd: %f \n",cwnd);}
-									}*/
-									/*if (cwnd >ssthresh){//congestion avoidance
+
+									
+									
+
+									if (cwnd >ssthresh){//congestion avoidance
+
 										if (debug ==TRUE){printf("congestion avoidance\n");}
 										cwnd+= (1/cwnd)*(atoi(str)-last_ack);
 										}
-									else{*/
+									else{
 										cwnd=cwnd+(atoi(str)-last_ack);
-									//}
+
+									}
+
 									
 									last_ack=atoi(str);
 									duplicate=0;
@@ -550,15 +553,7 @@ void *receive_ACK(void *arg ){
 								
 								
 							}
-							/*else if(atoi(str)>=count-1){//after retransmission serveur can receive a ack > count
-								if (debug ==TRUE){printf("fast retransmit\n");}
-								duplicate=0;
-								count=atoi(str)+1;
-								last_ack=atoi(str);
-								flight_size=0;
-								cwnd=ssthresh;//fast recovery
 							
-							}*/
 							if(duplicate==DUPLICATE){
 								if (debug ==TRUE){printf("retransmission of %d \n",last_ack+1);}
 								ssthresh=min((int)cwnd,RWND)/2;
@@ -636,7 +631,7 @@ int main (int argc, char *argv[]) {
 			printf("information exchange on port : %d \n",port_data); 
 		}
 		conversation();
-		sleep(20);
+
 		/* Clean up and exit */
 		pthread_attr_destroy(&attr_listener);
 		pthread_attr_destroy(&attr_sender);
