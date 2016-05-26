@@ -251,14 +251,14 @@ void *send_file(void *arg ){
 	nb_segment_total=(int)(file_size/MDS)+1;// need to add 1 to count the last segment with a fewer size
 	if(debug==TRUE){printf("nb segment =%d\n", nb_segment_total);}	
 	
-	char all_file[file_size];
+	char all_file[MAX_SIZE_BUFCIRCULAIRE];
 	int curseur=0;
 	int total_size;
 	readFile = TRUE;
 	//double window=cwnd;
 	
 
-	//read all file :
+	/*//read all file :
 	while(feof(fin)==0){
 	
 		size_data_to_send=fread(all_file+curseur,1, MDS,fin);
@@ -267,7 +267,7 @@ void *send_file(void *arg ){
 	
 	}
 	if(debug==TRUE){printf("%d bytes written in all_file buffer\n",curseur);}
-		
+	*/	
 	
 	//beginning of sending the file*/ 
 	if(debug==TRUE){printf("\t send_file begins\n");}
@@ -275,7 +275,28 @@ void *send_file(void *arg ){
 	while( okFile==FALSE){
 		
 		pthread_mutex_lock(&mutex);
+			if(readFile==TRUE){
+			//read all file :
+				if(curseur<file_size){
+
+					if(debug==TRUE){printf("avant ecriture %d curseur d'ou dans buffer %d, %d size to read\n",curseur, (curseur % MAX_SIZE_BUFCIRCULAIRE),size_to_read);}
+				
+
+					if ((curseur % MAX_SIZE_BUFCIRCULAIRE)+size_to_read > MAX_SIZE_BUFCIRCULAIRE){
+							//when size-to-read overcome max size buf circu
+						size_data_to_send=fread(all_file+(curseur % MAX_SIZE_BUFCIRCULAIRE),1,(MAX_SIZE_BUFCIRCULAIRE-(curseur % MAX_SIZE_BUFCIRCULAIRE)),fin);
+						curseur=curseur+size_data_to_send;
+						size_to_read-=size_data_to_send;
+						if(debug==TRUE){printf(" 1ere ecriture %d curseur  %d size to read\n",curseur, size_to_read);}
+					}
+					size_data_to_send=fread(all_file+(curseur % MAX_SIZE_BUFCIRCULAIRE),1, size_to_read,fin);
+					curseur=curseur+size_data_to_send;
+				
+					if(debug==TRUE){printf("%d/%d bytes written in all_file buffer (%d/%d this time) rep ferror %d\n",curseur, file_size, size_data_to_send,size_to_read,ferror(fin));}
+				}
 			
+				readFile=FALSE;
+			}	
 			if(count<=nb_segment_total){
 			
 			//window=min(cwnd,(double)RWND);
@@ -295,19 +316,20 @@ void *send_file(void *arg ){
 					
 							size_data_to_send=(int)(file_size-((count-1)*MDS));//last size to send
 
-						// copy the payload (all_file) inside the buffer to send.
-							memcpy(sndBuf+NUMSEQ_SIZE,all_file+(count-1)*MDS,size_data_to_send); //count-1 to start at the good offset in the buffer
+						
 						}
 					
 						else{
 						
 							size_data_to_send=MDS;
-						// copy the payload (all_file) inside the buffer to send.
-							memcpy(sndBuf+NUMSEQ_SIZE,all_file+(count-1)*MDS,size_data_to_send); //count-1 to start at the good offset in the buffer
+						
+							
 						}
 
-				//fill the sndBuf with number of seg
-	
+				
+		// copy the payload (all_file) inside the buffer to send.
+						memcpy(sndBuf+NUMSEQ_SIZE,all_file+((count-1)*MDS)%MAX_SIZE_BUFCIRCULAIRE,size_data_to_send);
+		//fill the sndBuf with number of seg
 						sprintf(sndBuf,"%d",count); // write the number of sequence in the buffer
 					
 					
@@ -419,6 +441,12 @@ void *receive_ACK(void *arg ){
 						retransmission = FALSE;
 						last_ack = atoi(str);
 					}
+
+					if (last_ack >= x*((int)(MAX_SIZE_BUFCIRCULAIRE/(2*MDS)))){ 
+								x++;
+								size_to_read=MAX_SIZE_BUFCIRCULAIRE/2;								
+								readFile=TRUE;
+							}
 				}
 				
 				rcvMsg_Size=0;				
