@@ -15,7 +15,7 @@
 
 #define MAX_SIZE_BUFCIRCULAIRE 1000980 //memory size for the file : 1Mo 670 packet de 1494 octets
 #define DUPLICATE 2
-#define RWND 50
+#define RWND 40
 
 #define NANO 1000000000
 #define MIN_RTT 7000000 //ms

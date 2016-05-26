@@ -184,7 +184,7 @@ void init( ){ //initialisation des variables et création/lien socket
 	//initialisation of serveur and data addr	
 		serveur.sin_family= AF_INET;
 		data.sin_family= AF_INET;
-		
+		printf("process %d NbClients : %d\n", getpid(), nbClient);
 		serveur.sin_port= htons(port);
 		data.sin_port= htons(port_data);
 		
@@ -229,11 +229,11 @@ void conversation(){
 
 			if(msgSize > 0) {
 				
-				if(debug==TRUE){printf("received : %s\n", recep);}
+				//printf("received : %s\n", recep);
 				fin=fopen(recep, "r");
 					
 				if(fin==NULL){
-					perror("Error : file not found \n");
+					perror("From serveur Error : file not found \n");
 				}
 				else{
 					file_size=catch_file_size();
@@ -256,6 +256,7 @@ void conversation(){
 				memset(recep,0,MSS);
 					
 			}
+			fclose(fin);
 
 }
 
@@ -436,8 +437,6 @@ void *receive_ACK(void *arg ){
 	int x=1;
 	int rep=0;
 	int retransmission=0;
-	//int nb_loop_retransmission=0;
-	//int retransmission=FALSE;
 	fd_set readfs;
 	
 	
@@ -499,7 +498,6 @@ void *receive_ACK(void *arg ){
 							save_timeout[atoi(str) % MAX_RTT]=timeout;
 							
 							new_timeout=atoi(str);
-							//retransmission=FALSE;
 								
 						}	
 											
@@ -533,19 +531,14 @@ void *receive_ACK(void *arg ){
 								if (last_ack< atoi(str) && atoi(str)<=count-1){//if count > ack > last_ack
 									flight_size=count-atoi(str)-1;
 									retransmission=0;
-									//nb_loop_retransmission=0;
-									/*if(retransmission==TRUE){
-										retransmission=FALSE;
-										cwnd=sshthresh+duplicate;//test 
-										if(debug==TRUE){printf("\t  cwnd: %f \n",cwnd);}
-									}*/
-									/*if (cwnd >ssthresh){//congestion avoidance
+									
+									if (cwnd >ssthresh){//congestion avoidance
 										if (debug ==TRUE){printf("congestion avoidance\n");}
 										cwnd+= (1/cwnd)*(atoi(str)-last_ack);
 										}
-									else{*/
+									else{
 										cwnd=cwnd+(atoi(str)-last_ack);
-									//}
+									}
 									
 									last_ack=atoi(str);
 									duplicate=0;
@@ -554,15 +547,7 @@ void *receive_ACK(void *arg ){
 								
 								
 							}
-							/*else if(atoi(str)>=count-1){//after retransmission serveur can receive a ack > count
-								if (debug ==TRUE){printf("fast retransmit\n");}
-								duplicate=0;
-								count=atoi(str)+1;
-								last_ack=atoi(str);
-								flight_size=0;
-								cwnd=ssthresh;//fast recovery
 							
-							}*/
 							if(duplicate==DUPLICATE){
 								if (debug ==TRUE){printf("retransmission of %d \n",last_ack+1);}
 								ssthresh=min((int)cwnd,RWND)/2;
@@ -571,7 +556,6 @@ void *receive_ACK(void *arg ){
 								flight_size--;
 								cwnd=flight_size+duplicate;
 								retransmission++;
-								//flight_size=0;
 							}
 							
 							if (last_ack >= x*((int)(MAX_SIZE_BUFCIRCULAIRE/(2*MDS)))){ 
@@ -630,19 +614,24 @@ int main (int argc, char *argv[]) {
 		while(1){	
 			
 			signal(SIGUSR1, new_connexion);
-			port_data=port+nbClient;
 			
 			pid=fork();
 			if(pid == 0){//son process
 				
-				printf("process communicating with client %d\n",nbClient);
+				port_data=getpid()+nbClient;
+				while(port_data > 10000){
+					port_data = port_data%10000;
+				}
+				if(port_data <= 1024) port_data+=1024;
+				printf("port_data : %d\n", port_data);
+				//printf("process communicating with client %d\n",nbClient);
   				init();
 				connexion();
 				
 				kill(getppid(), SIGUSR1); //allow father to get a new connexion
 						
 				close(desc); //closing control socket
-			
+				
 				if(debug==TRUE){
 					printf("information exchange on port : %d \n",port_data); 
 				}
@@ -660,4 +649,5 @@ int main (int argc, char *argv[]) {
 		}
 			
 	return 0;
+	}
 }
